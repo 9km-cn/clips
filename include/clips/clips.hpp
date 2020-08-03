@@ -111,12 +111,12 @@
 #endif
 
 // version 版本
-static constexpr const char* CLIPS_VERSION_CODE = "0.1.0";
+static constexpr const char* CLIPS_VERSION_CODE = "0.1.1";
 constexpr const uint32_t CLIPS_VERSION_NUMBER_FUNC(int major, int minor, int patch)
 {
     return ((major) * 1000 * 1000 + (minor) * 1000 + (patch));
 }
-static constexpr const uint32_t CLIPS_VERSION_NUMBER = CLIPS_VERSION_NUMBER_FUNC(0, 1, 0);
+static constexpr const uint32_t CLIPS_VERSION_NUMBER = CLIPS_VERSION_NUMBER_FUNC(0, 1, 1);
 
 namespace clips {
 // ----------------------------------------------------------------------------
