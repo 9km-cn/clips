@@ -92,8 +92,8 @@ Directory structure example:
 + <project_path>
   + src
     - main.cpp
-    - cmd_first.cpp
-    - cmd_second.cpp
+    - cmds_first.cpp
+    - cmds_second.cpp
     + <others...>
 ```
 
@@ -138,7 +138,7 @@ Define your root function:
 
 ```cpp
 uint32_t g_ddd = 0;
-clips::error_t root(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t root(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec root handler. ddd=" << ddd << std::endl;
     return clips::ok;
@@ -184,7 +184,9 @@ Defined:
 
 ```cpp
 // create
-auto sub = clips::make_cmd("sub", "sub brief", "sub desc");
+auto sub = clips::make_cmd("sub");
+sub->brief("sub brief");
+sub->desc("sub desc");
 
 // flags
 int fff = 0;
@@ -195,13 +197,13 @@ sub->flag<uint32_t>("eee", "", 1u, "eee desc", true);
 sub->example("sub --eee 0 -f 0");
 
 // bind handler
-sub->bind([](const clips::pcmd_t& cmd,
-    const clips::args_t& args,
-    const clips::flags_t& flags) -> clips::error_t
+sub->bind([](const clips::pcmd_t& pcmd,
+    const clips::args_t& args) -> clips::error_t
     {
         std::cout << "exec sub" << std::endl;
         return clips::ok;
-    });
+    }
+);
 
 // bind cmd
 auto ret = clips::bind(sub);
@@ -224,7 +226,9 @@ A nested command is one that contains commands.
 Defined:
 
 ```cpp
-auto nested = clips::make_cmd("nested", "nested brief", "nested desc");
+auto nested = clips::make_cmd("nested");
+nested->brief("nested 简洁描述");
+nested->desc("nested 详细描述");
 // ...
 auto ret = sub->bind(nested);
 if (ret != clips::ok)
@@ -244,7 +248,7 @@ $ ./appname sub nested [args...] [--flags...]
 You don't need to implement all the commands in main.cpp, you can implement them separately. This is both clear and testable.
 
 ```cpp
-auto your_func(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags) -> clips::error_t
+auto your_func(const clips::pcmd_t& pcmd, const clips::args_t& args) -> clips::error_t
 {
     // ...
     return clips::ok;
@@ -286,7 +290,7 @@ auto desc = clips::desc();
 It's a std::vector<std::string> from argv[].
 
 ```cpp
-auto argv = clips::argv();
+auto& argv = clips::argv();
 ```
 
 # Flag
@@ -300,7 +304,7 @@ You can only add flag by command interfaces.
 auto err = pcmd->flag<int>("name", "n", 0, "desc");
 auto value = flags["--name"]->cast<int>();
 // or
-auto value = clips::cast<int>("--name");
+auto value = pcmd->cast<int>("--name");
 
 // bind variables
 int varname = 0; // also using cast()
@@ -356,9 +360,9 @@ if (flags["--name"]->castable<int>())
 Converted:
 
 ```cpp
-auto value = flags["--name"]->cast<int>();
+auto value = flags["--name"]->cast<std::string>();
 // or
-auto value = clips::cast<int>("--name");
+auto value = pcmd->cast<std::string>("--name");
 ```
 
 An exception is thrown when the target type cannot be converted:
@@ -368,7 +372,7 @@ try
 {
     auto value = flags["--name"]->cast<std::string>();
     // or
-    auto value = clips::cast<std::string>("--abc");
+    auto value = pcmd->cast<std::string>("--abc");
 }
 catch (std::exception& e)
 {
@@ -380,7 +384,7 @@ Using error_t:
 
 ```cpp
 error_t err;
-auto value = clips::cast<std::string>("--abc", &err);
+auto value = pcmd->cast<std::string>("--abc", &err);
 if (err != clips::ok)
 {
     return err;
@@ -449,7 +453,7 @@ public:
     {
     }
 
-    custom_t(custom_t&& mv)
+    custom_t(custom_t&& mv) noexcept
         : num_(mv.num_)
         , msg_(std::move(mv.msg_))
     {
@@ -490,7 +494,7 @@ err = pcmd->flag<custom_t>("custom", "", {}, "custom_t type");
 Cast:
 
 ```cpp
-std::cout << clips::cast<custom_t>("--custom") << std::endl;
+std::cout << pcmd->cast<custom_t>("--custom") << std::endl;
 ```
 
 Run like this:
@@ -511,9 +515,6 @@ auto pcmd = clips::make_cmd();
 
 // given name
 auto pcmd = clips::make_cmd("name");
-
-// given base info
-auto pcmd = clips::make_cmd("name", "brief", "desc");
 ```
 
 ## Base Info
@@ -544,7 +545,7 @@ auto example = pcmd->example();
 // need cast()
 auto err = pcmd->flag<int>("name", "n", 0, "desc");
 auto value = flags["--name"]->cast<int>();
-auto value = clips::cast<int>("--name");
+auto value = pcmd->cast<int>("--name");
 
 // bind variables
 int varname = 0; // also using cast()
@@ -556,7 +557,7 @@ Notice the life cycle of the variable.
 ## Bind Handler
 
 ```cpp
-auto your_func(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags) -> clips::error_t
+auto your_func(const clips::pcmd_t& cmd, const clips::args_t& args) -> clips::error_t
 {
     // ...
     return clips::ok;
@@ -582,21 +583,14 @@ Defined:
 $ ./appname sub nested [args...] [--flags...]
 ```
 
-If the command contains nested commands, the input non-flag may be recognized as an undefined command. Only no-parameter execution is allowed. As follows:
+As follows:
 
 ```yaml
-$ ./appname sub adfa # error occurs, because the sub contains the nested, adfa is considered undefined command
+$ ./appname sub adfa # ok, adfa is args[0]
 $ ./appname sub      # ok, args size is 0
-```
-
-If the command does not contain nested commands, any input that is not 'flag' is recognized as a parameter. As follows:
-
-```yaml
 $ ./appname sub nested adfa # ok, args[0] is adfa
 $ ./appname sub nested      # ok, args size is 0
 ```
-
-Flags are not subject to this rule.
 
 # Error Message
 

@@ -17,8 +17,9 @@
 
 CLIPS_INIT()
 {
-    auto cnull = clips::make_cmd("null", "command handler is null", 
-        "command handler is null, it will be nothing to do");
+    auto cnull = clips::make_cmd("null");
+    cnull->brief("command handler is null");
+    cnull->desc("command handler is null, it will be nothing to do");
     cnull->example("null");
 
     return clips::bind(cnull);

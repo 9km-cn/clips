@@ -92,8 +92,8 @@ flags:
 + <project_path>
   + src
     - main.cpp
-    - cmd_first.cpp
-    - cmd_second.cpp
+    - cmds_first.cpp
+    - cmds_second.cpp
     + <others...>
 ```
 
@@ -138,7 +138,7 @@ int main(int argc, char* argv[])
 
 ```cpp
 uint32_t g_ddd = 0;
-clips::error_t root(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t root(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec root handler. ddd=" << ddd << std::endl;
     return clips::ok;
@@ -184,7 +184,9 @@ $ ./appname [args...] [--flags...]
 
 ```cpp
 // 创建
-auto sub = clips::make_cmd("sub", "sub brief", "sub desc");
+auto sub = clips::make_cmd("sub");
+sub->brief("sub 简洁描述");
+sub->desc("sub 详细描述");
 
 // 添加 flags
 int fff = 0;
@@ -195,13 +197,13 @@ sub->flag<uint32_t>("eee", "", 1u, "eee desc", true);
 sub->example("sub --eee 0 -f 0");
 
 // 绑定函数
-sub->bind([](const clips::pcmd_t& cmd,
-    const clips::args_t& args,
-    const clips::flags_t& flags) -> clips::error_t
+sub->bind([](const clips::pcmd_t& pcmd,
+    const clips::args_t& args) -> clips::error_t
     {
         std::cout << "exec sub." << std::endl;
         return clips::ok;
-    });
+    }
+);
 
 // 绑定命令
 auto ret = clips::bind(sub);
@@ -224,7 +226,9 @@ $ ./appname sub [args...] [--flags...]
 当需要在 `sub` 命令下包含子命令 `nested`, 则需要如下方法实现：
 
 ```cpp
-auto nested = clips::make_cmd("nested", "nested brief", "nested desc");
+auto nested = clips::make_cmd("nested");
+nested->brief("nested 简洁描述");
+nested->desc("nested 详细描述");
 // ...
 auto ret = sub->bind(nested);
 if (ret != clips::ok)
@@ -244,7 +248,7 @@ $ ./appname sub nested [args...] [--flags...]
 当包含子命令和`flag`很多时，在 `main.cpp` 实现所有交互逻辑，会显得臃肿不清晰。将各命令在单独的逻辑中实现，既条理清晰，又增加了程序的可测试性。
 
 ```cpp
-auto your_func(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags) -> clips::error_t
+auto your_func(const clips::pcmd_t& pcmd, const clips::args_t& args) -> clips::error_t
 {
     // ...
     return clips::ok;
@@ -284,7 +288,7 @@ auto desc = clips::desc();
 ## 原始命令参数
 
 ```cpp
-auto argv = clips::argv();
+auto& argv = clips::argv();
 ```
 
 # `Flag`
@@ -298,7 +302,7 @@ auto argv = clips::argv();
 auto err = pcmd->flag<int>("name", "n", 0, "desc");
 auto value = flags["--name"]->cast<int>();
 // 或
-auto value = clips::cast<int>("--name");
+auto value = pcmd->cast<int>("--name");
 
 // 绑定变量
 int varname = 0; // 也可用 cast() 转换
@@ -344,22 +348,22 @@ auto err = pcmd->pflag<int>(&varname, "name", "n", 0, {0, 1, 2}, "desc");
 
 ```cpp
 // 是否可以转换为目标类型
-if (flags["--name"]->castable<int>())
+if (flags["--name"]->castable<std::string>())
 {
     // 可以转换
 }
 
 // 转换为目标类型值
-auto value = flags["--name"]->cast<int>();
+auto value = flags["--name"]->cast<std::string>();
 // 或
-auto value = clips::cast<std::string>("--name");
+auto value = pcmd->cast<std::string>("--name");
 
 // 不能转换为目标类型时，会抛出异常
 try
 {
     auto value = flags["--name"]->cast<std::string>();
     // 或
-    auto value = clips::cast<std::string>("--abc");
+    auto value = pcmd->cast<std::string>("--abc");
 }
 catch (std::exception& e)
 {
@@ -371,7 +375,7 @@ catch (std::exception& e)
 
 ```cpp
 error_t err;
-auto value = clips::cast<std::string>("--abc", &err);
+auto value = pcmd->cast<std::string>("--abc", &err);
 if (err != clips::ok)
 {
     return err;
@@ -442,7 +446,7 @@ public:
     {
     }
 
-    custom_t(custom_t&& mv)
+    custom_t(custom_t&& mv) noexcept
         : num_(mv.num_)
         , msg_(std::move(mv.msg_))
     {
@@ -483,7 +487,7 @@ err = pcmd->flag<custom_t>("custom", "", {}, "custom_t type");
 转换:
 
 ```cpp
-std::cout << clips::cast<custom_t>("--custom") << std::endl;
+std::cout << pcmd->cast<custom_t>("--custom") << std::endl;
 ```
 
 执行:
@@ -504,9 +508,6 @@ auto pcmd = clips::make_cmd();
 
 // 给定名称
 auto pcmd = clips::make_cmd("name");
-
-// 给定基本信息
-auto pcmd = clips::make_cmd("name", "brief", "desc");
 ```
 
 ## 基本信息
@@ -540,7 +541,7 @@ auto example = pcmd->example();
 // 需要用 cast() 转换
 auto err = pcmd->flag<int>("name", "n", 0, "desc");
 auto value = flags["--name"]->cast<int>();
-auto value = clips::cast<int>("--name");
+auto value = pcmd->cast<int>("--name");
 
 // 绑定变量
 int varname = 0; // 也可用 cast() 转换
@@ -552,7 +553,7 @@ auto err = pcmd->pflag<int>(&varname, "name", "n", 0, "desc");
 ## 绑定函数
 
 ```cpp
-auto your_func(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags) -> clips::error_t
+auto your_func(const clips::pcmd_t& cmd, const clips::args_t& args) -> clips::error_t
 {
     // ...
     return clips::ok;
@@ -578,21 +579,14 @@ auto err = pcmd->bind(psub);
 $ ./appname sub nested [args...] [--flags...]
 ```
 
-如果命令包含嵌套命令，则输入的非`flag`可能会被识别为未定义的命令，此种情况只允许无参数方式执行，如下：
+示例如下：
 
 ```yaml
-$ ./appname sub adfa # 会报错误，因为sub包含nested，adfa 被认为未定义的命令
+$ ./appname sub adfa # ok, adfa 为参数 args[0]
 $ ./appname sub      # ok, args 大小为 0
-```
-
-如果命令不包含嵌套命令，则输入的非`flag`都会被识别为参数。如下：
-
-```yaml
 $ ./appname sub nested adfa # ok, args[0] 为 adfa
 $ ./appname sub nested      # ok, args 大小为 0
 ```
-
-`Flags` 不受这个规则的限制。
 
 # 错误信息
 

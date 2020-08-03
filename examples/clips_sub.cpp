@@ -15,7 +15,7 @@
 
 #include "clips/clips.hpp"
 
-clips::error_t sub_handler(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t sub_handler(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec sub handler" << std::endl;
 
@@ -26,13 +26,13 @@ clips::error_t sub_handler(const clips::pcmd_t& cmd, const clips::args_t& args, 
     }
     std::cout << "}" << std::endl;
 
-    std::cout << " flags{extend=" << clips::cast<uint32_t>("-e")
+    std::cout << " flags{extend=" << pcmd->flags().count("-e")
         << "}" << std::endl;
 
     return clips::ok;
 }
 
-clips::error_t nested_handler(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t nested_handler(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec sub nested handler" << std::endl;
 
@@ -43,13 +43,13 @@ clips::error_t nested_handler(const clips::pcmd_t& cmd, const clips::args_t& arg
     }
     std::cout << "}" << std::endl;
 
-    std::cout << " flags{extend=" << clips::cast<uint32_t>("-e")
+    std::cout << " flags{extend=" << pcmd->flags().count("-e")
         << "}" << std::endl;
 
     return clips::ok;
 }
 
-clips::error_t leaf_handler(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t leaf_handler(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec sub nested leaf handler" << std::endl;
 
@@ -60,9 +60,9 @@ clips::error_t leaf_handler(const clips::pcmd_t& cmd, const clips::args_t& args,
     }
     std::cout << "}" << std::endl;
 
-    std::cout << " flags{extend=" << clips::cast<uint32_t>("-e")
-        << ", num=" << clips::cast<int>("--num")
-        << ", enum=" << clips::cast<int>("--enum")
+    std::cout << " flags{extend=" << pcmd->flags().count("-e")
+        << ", num=" << pcmd->flags().count("--num")
+        << ", enum=" << pcmd->flags().count("--enum")
         << "}" << std::endl;
 
     return clips::ok;
@@ -71,17 +71,23 @@ clips::error_t leaf_handler(const clips::pcmd_t& cmd, const clips::args_t& args,
 CLIPS_INIT()
 {
     // sub
-    auto sub = clips::make_cmd("sub", "subcommand", "subcommand and have nested command");
+    auto sub = clips::make_cmd("sub");
+    sub->brief("subcommand");
+    sub->desc("subcommand and have nested command");
     sub->example("sub");
     sub->bind(sub_handler);
 
     // nested
-    auto nested = clips::make_cmd("nested", "a nested command", "a nested command");
+    auto nested = clips::make_cmd("nested");
+    nested->brief("a nested command");
+    nested->desc("a nested command");
     nested->example("sub nested");
     nested->bind(nested_handler);
 
     // leaf
-    auto leaf = clips::make_cmd("leaf", "a leaf command", "a leaf command");
+    auto leaf = clips::make_cmd("leaf");
+    leaf->brief("a leaf command");
+    leaf->desc("a leaf command");
 
     auto err = leaf->flag<int>("num", "n", 1, "num desc");
     if (err != clips::ok)
@@ -108,5 +114,11 @@ CLIPS_INIT()
         return err;
     }
 
-    return clips::bind(sub);
+    err = clips::bind(sub);
+    if (err != clips::ok)
+    {
+        return err;
+    }
+
+    return clips::ok;
 }

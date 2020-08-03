@@ -15,16 +15,17 @@
 
 #include "clips/clips.hpp"
 
-clips::error_t error_handler(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t error_handler(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec error_handler" << std::endl;
-    return clips::make_error("exec failed.", cmd->stack());
+    return clips::make_error("exec failed.", pcmd->stack());
 }
 
 CLIPS_INIT()
 {
-    auto cerror = clips::make_cmd("error", "command handler return error", 
-        "command handler return error, it will be show an error message.");
+    auto cerror = clips::make_cmd("error");
+    cerror->brief("command handler return error");
+    cerror->desc("command handler return error, it will be show an error message.");
     cerror->example("error");
     cerror->bind(error_handler);
 

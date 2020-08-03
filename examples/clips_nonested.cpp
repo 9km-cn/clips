@@ -17,11 +17,11 @@
 
 CLIPS_INIT()
 {
-    auto pcmd = clips::make_cmd("nonested", "nonested subcommand", "subcommand and has no nested command");
+    auto pcmd = clips::make_cmd("nonested");
+    pcmd->brief("nonested subcommand");
+    pcmd->desc("subcommand and has no nested command");
     pcmd->example("nonested");
-    pcmd->bind([](const clips::pcmd_t& cmd,
-        const clips::args_t& args,
-        const clips::flags_t& flags) -> clips::error_t
+    pcmd->bind([](const clips::pcmd_t& cmd, const clips::args_t& args) -> clips::error_t
         {
             std::cout << "exec nonested handler" << std::endl;
 
@@ -33,7 +33,8 @@ CLIPS_INIT()
             std::cout << "}" << std::endl;
 
             return clips::ok;
-        });
+        }
+    );
 
     return clips::bind(pcmd);
 }

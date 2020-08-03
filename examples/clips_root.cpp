@@ -17,7 +17,7 @@
 
 static uint32_t g_global = 0;
 
-clips::error_t root(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t root(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec root handler" << std::endl;
 
@@ -29,7 +29,7 @@ clips::error_t root(const clips::pcmd_t& cmd, const clips::args_t& args, const c
     std::cout << "}" << std::endl;
 
     std::cout << " flags{ global=" << g_global 
-        << ", extend=" << clips::cast<uint32_t>("-e")
+        << ", extend=" << pcmd->cast<uint32_t>("-e")
         << "}" << std::endl;
 
     return clips::ok;

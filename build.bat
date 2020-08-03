@@ -10,8 +10,8 @@ if not exist "build" (
 
 rem build
 cd "build"
-cmake -G "Visual Studio 15 Win64" -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
+cmake -G "Visual Studio 16 2019" -A x64 ..
+cmake --build . --config Release
 
 rem home
 cd ..

@@ -1,16 +1,12 @@
+#!/bin/bash
 
-if [ ! -d "build" ]; then
-  mkdir build
+if [ ! -d "build_linux" ]; then
+  mkdir -p build_linux
 fi
 
-if [ -d "build" ]; then
-  rm -rf build
-fi
-mkdir build
-
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DTEST=1 ..
-make -j8
+cd build_linux
+cmake .. -DTEST=1 
+cmake --build . --config Release
 #cpack --config CPackConfig.cmake
 
 cd ..

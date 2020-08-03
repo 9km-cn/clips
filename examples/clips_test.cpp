@@ -15,7 +15,7 @@
 
 #include "clips/clips.hpp"
 
-clips::error_t test_handler(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t test_handler(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec test handler" << std::endl;
 
@@ -26,13 +26,13 @@ clips::error_t test_handler(const clips::pcmd_t& cmd, const clips::args_t& args,
     }
     std::cout << "}" << std::endl;
 
-    std::cout << " flags{extend=" << clips::cast<uint32_t>("--extend")
+    std::cout << " flags{extend=" << pcmd->flags().count("--extend")
         << "}" << std::endl;
 
     return clips::ok;
 }
 
-clips::error_t base_handler(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t base_handler(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec test base handler" << std::endl;
 
@@ -44,20 +44,20 @@ clips::error_t base_handler(const clips::pcmd_t& cmd, const clips::args_t& args,
     std::cout << "}" << std::endl;
 
     std::cout << " flags{" << std::endl
-        << "    extend =" << clips::cast<uint32_t>("--extend") << std::endl
-        << "    bool   =" << clips::cast<bool>("--bool") << std::endl
-        << "    char   =" << clips::cast<char>("--char") << std::endl
-        << "    int8   =" << clips::cast<int8_t>("--int8") << std::endl
-        << "    uint8  =" << clips::cast<uint8_t>("--uint8") << std::endl
-        << "    int16  =" << clips::cast<int16_t>("--int16") << std::endl
-        << "    uint16 =" << clips::cast<uint16_t>("--uint16") << std::endl
-        << "    int32  =" << clips::cast<int32_t>("--int32") << std::endl
-        << "    uint32 =" << clips::cast<uint32_t>("--uint32") << std::endl
-        << "    int64  =" << clips::cast<int64_t>("--int64") << std::endl
-        << "    uint64 =" << clips::cast<uint64_t>("--uint64") << std::endl
-        << "    float  =" << clips::cast<float>("--float") << std::endl
-        << "    double =" << clips::cast<double>("--double") << std::endl
-        << "    string =" << clips::cast<std::string>("--string") << std::endl
+        << "    extend =" << pcmd->flags().at("--extend")->cast<uint32_t>() << std::endl
+        << "    bool   =" << pcmd->flags().at("--bool")->cast<bool>() << std::endl
+        << "    char   =" << pcmd->flags().at("--char")->cast<char>() << std::endl
+        << "    int8   =" << pcmd->flags().at("--int8")->cast<int8_t>() << std::endl
+        << "    uint8  =" << pcmd->flags().at("--uint8")->cast<uint8_t>() << std::endl
+        << "    int16  =" << pcmd->flags().at("--int16")->cast<int16_t>() << std::endl
+        << "    uint16 =" << pcmd->flags().at("--uint16")->cast<uint16_t>() << std::endl
+        << "    int32  =" << pcmd->flags().at("--int32")->cast<int32_t>() << std::endl
+        << "    uint32 =" << pcmd->flags().at("--uint32")->cast<uint32_t>() << std::endl
+        << "    int64  =" << pcmd->flags().at("--int64")->cast<int64_t>() << std::endl
+        << "    uint64 =" << pcmd->flags().at("--uint64")->cast<uint64_t>() << std::endl
+        << "    float  =" << pcmd->flags().at("--float")->cast<float>() << std::endl
+        << "    double =" << pcmd->flags().at("--double")->cast<double>() << std::endl
+        << "    string =" << pcmd->flags().at("--string")->cast<std::string>() << std::endl
         << "}" << std::endl;
 
     return clips::ok;
@@ -80,7 +80,7 @@ public:
     {
     }
 
-    custom_t(custom_t&& mv)
+    custom_t(custom_t&& mv) noexcept
         : num_(mv.num_)
         , msg_(std::move(mv.msg_))
     {
@@ -111,7 +111,7 @@ std::istream& operator>>(std::istream& is, custom_t& obj)
     return is;
 }
 
-clips::error_t custom_handler(const clips::pcmd_t& cmd, const clips::args_t& args, const clips::flags_t& flags)
+clips::error_t custom_handler(const clips::pcmd_t& pcmd, const clips::args_t& args)
 {
     std::cout << "exec test custom handler" << std::endl;
 
@@ -123,8 +123,8 @@ clips::error_t custom_handler(const clips::pcmd_t& cmd, const clips::args_t& arg
     std::cout << "}" << std::endl;
 
     std::cout << " flags{" << std::endl
-        << "    extend=" << clips::cast<uint32_t>("--extend") << std::endl
-        << "    custom=" << clips::cast<custom_t>("--custom") << std::endl
+        << "    extend=" << pcmd->cast<uint32_t>("--extend") << std::endl
+        << "    custom=" << pcmd->cast<custom_t>("--custom") << std::endl
         << "}" << std::endl;
 
     return clips::ok;
@@ -132,11 +132,15 @@ clips::error_t custom_handler(const clips::pcmd_t& cmd, const clips::args_t& arg
 
 CLIPS_INIT()
 {
-    auto test = clips::make_cmd("test", "test clips", "test clips for some type flags.");
+    auto test = clips::make_cmd("test");
+    test->brief("test clips");
+    test->desc("test clips for some type flags.");
     test->example("test --name=value");
     test->bind(test_handler);
 
-    auto base = clips::make_cmd("base", "test base types", "test base types.");
+    auto base = clips::make_cmd("base");
+    base->brief("test base types");
+    base->desc("test base types.");
     base->example("test base --name=value");
 
     auto err = base->flag<bool>("bool", "", false, "bool type");
@@ -206,7 +210,9 @@ CLIPS_INIT()
     }
     base->bind(base_handler);
 
-    auto custom = clips::make_cmd("custom", "test custom types", "test custom types.");
+    auto custom = clips::make_cmd("custom");
+    custom->brief("test custom types");
+    custom->desc("test custom types.");
     err = custom->flag<custom_t>("custom", "", {}, "custom_t type");
     if (err != clips::ok)
     {

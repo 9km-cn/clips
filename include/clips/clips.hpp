@@ -25,7 +25,7 @@
 // 
 // clips_cmd.cpp:
 // static uint32_t g_ccc = 0;
-// clips::error_t your_func(const pcmd_t& cmd, const args_t& args, const flags_t& flags)
+// clips::error_t your_func(const pcmd_t& pcmd, const args_t& args)
 // {
 //     处理
 //     return clips::ok;
@@ -46,7 +46,7 @@
 //
 // main.cpp:
 // static uint32_t g_fff = 0;
-// clips::error_t your_root(const pcmd_t& cmd, const args_t& args, const flags_t& flags)
+// clips::error_t your_root(const pcmd_t& pcmd, const args_t& args)
 // {
 //     处理
 //     return clips::ok;
@@ -84,10 +84,7 @@
 #include <sstream>
 #include <regex>
 #include <tuple>
-#include <string.h>
-#ifndef WIN32
-#define strcasecmp _stricmp
-#endif
+#include <cstring>
 
 /// CLIPS_INIT 初始化函数
 #define CLIPS_INIT() INNER_CLIPS_INIT_IMPL(__FILE__, __LINE__)
@@ -114,24 +111,24 @@
 #endif
 
 // version 版本
-constexpr char* CLIPS_VERSION_CODE = "0.1.0";
-constexpr uint32_t CLIPS_VERSION_NUMBER_FUNC(int major, int minor, int patch)
+static constexpr const char* CLIPS_VERSION_CODE = "0.1.0";
+constexpr const uint32_t CLIPS_VERSION_NUMBER_FUNC(int major, int minor, int patch)
 {
     return ((major) * 1000 * 1000 + (minor) * 1000 + (patch));
 }
-constexpr uint32_t CLIPS_VERSION_NUMBER = CLIPS_VERSION_NUMBER_FUNC(0, 1, 0);
+static constexpr const uint32_t CLIPS_VERSION_NUMBER = CLIPS_VERSION_NUMBER_FUNC(0, 1, 0);
 
 namespace clips {
 // ----------------------------------------------------------------------------
 
 /// version 版本
-static const std::string& version()
+inline const char* version()
 {
     return CLIPS_VERSION_CODE;
 }
 
 /// version 版本
-static uint32_t version_number()
+inline uint32_t version_number()
 {
     return CLIPS_VERSION_NUMBER;
 }
@@ -139,12 +136,12 @@ static uint32_t version_number()
 // ----------------------------------------------------------------------------
 // forward declaration
 
-static void name(const std::string& name);
-static const std::string& name();
-static void desc(const std::string& desc);
-static const std::string& desc();
+inline void name(const std::string& name);
+inline const std::string& name();
+inline void desc(const std::string& desc);
+inline const std::string& desc();
 
-class cmd;
+class cmd_t;
 class flag_t;
 
 // ----------------------------------------------------------------------------
@@ -175,7 +172,7 @@ public:
     {
     }
 
-    error_t(error_t&& mv)
+    error_t(error_t&& mv) noexcept
         : msg_(std::move(mv.msg_))
         , stack_(std::move(mv.stack_))
     {
@@ -248,19 +245,19 @@ private:
 static const error_t ok{};
 
 /// make_error 创建错误
-static error_t make_error(const std::string& msg)
+inline error_t make_error(const std::string& msg)
 {
     return std::move(error_t(msg));
 }
 
 /// make_error 创建错误
-static error_t make_error(const std::string& msg, const std::string& stack)
+inline error_t make_error(const std::string& msg, const std::string& stack)
 {
     return std::move(error_t(msg, stack));
 }
 
 /// << 流式打印
-static std::ostream& operator<<(std::ostream& os, const error_t& err)
+inline std::ostream& operator<<(std::ostream& os, const error_t& err)
 {
     os << err.msg() << " " << err.stack();
     return os;
@@ -276,7 +273,7 @@ using argv_t = std::vector<std::string>;
 using args_t = std::vector<std::string>;
 
 /// pcmd_t 命令指针
-using pcmd_t = std::shared_ptr<cmd>;
+using pcmd_t = std::shared_ptr<cmd_t>;
 
 /// cmds_t 命令列表
 using cmds_t = std::unordered_map<std::string, pcmd_t>;
@@ -288,10 +285,13 @@ using pflag_t = std::shared_ptr<flag_t>;
 using flags_t = std::unordered_map<std::string, pflag_t>;
 
 /// func_t 命令函数
-using func_t = std::function<error_t(const pcmd_t& cmd, const args_t& args, const flags_t& flags)>;
+using func_t = std::function<error_t(const pcmd_t& pcmd, const args_t& args)>;
 
 // _init_func_t 初始化函数
 using _init_func_t = std::function<error_t(void)>;
+
+// _inits_t 初始化函数列表
+using _inits_t = std::vector<std::tuple<_init_func_t, std::string, int>>;
 
 // ----------------------------------------------------------------------------
 // utils
@@ -374,7 +374,8 @@ public:
             return;
         }
 
-        std::string::size_type pos1, pos2;
+        std::string::size_type pos1{ 0 };
+        std::string::size_type pos2{ 0 };
         size_t len = str.length();
         pos2 = str.find(d);
         pos1 = 0;
@@ -466,7 +467,7 @@ public:
     {
     }
 
-    explicit flag_cast_exception(std::string& msg)
+    explicit flag_cast_exception(const std::string& msg)
         : msg_(msg)
     {
     }
@@ -476,7 +477,7 @@ public:
     {
     }
 
-    flag_cast_exception(flag_cast_exception&& mv)
+    flag_cast_exception(flag_cast_exception&& mv) noexcept
         : msg_(std::move(mv.msg_))
     {
     }
@@ -506,14 +507,13 @@ class flag_t
 {
 public:
     flag_t()
-        : type_index_(std::type_index(typeid(void)))
     {
     }
 
     flag_t(const flag_t& cpy)
         : holder_(cpy.clone())
-        , type_index_(cpy.type_index_)
         , extend_(cpy.extend_)
+        , exist_(cpy.exist_)
         , required_(cpy.required_)
         , name_(cpy.name_)
         , fast_(cpy.fast_)
@@ -525,10 +525,10 @@ public:
     {
     }
 
-    flag_t(flag_t&& mv)
+    flag_t(flag_t&& mv) noexcept
         : holder_(std::move(mv.holder_))
-        , type_index_(std::move(mv.type_index_))
         , extend_(mv.extend_)
+        , exist_(mv.exist_)
         , required_(mv.required_)
         , name_(std::move(mv.name_))
         , fast_(std::move(mv.fast_))
@@ -547,8 +547,8 @@ public:
             return *this;
         }
         holder_ = rhs.clone();
-        type_index_ = rhs.type_index_;
         extend_ = rhs.extend_;
+        exist_ = rhs.exist_;
         required_ = rhs.required_;
         name_ = rhs.name_;
         fast_ = rhs.fast_;
@@ -569,18 +569,26 @@ public:
     /// type_name 类型名称
     std::string type_name()
     {
-        if (type_index_ == typeid(std::string))
+        if (!bool(holder_))
+        {
+            return "null";
+        }
+        if (holder_->type_index() == typeid(std::string))
         {
             return "std::string";
         }
-        return type_index_.name();
+        return holder_->type_index().name();
     }
 
     /// castable 是否可以转换为指定类型
     template<class T>
     bool castable()
     {
-        return type_index_ == std::type_index(typeid(T));
+        if (!bool(holder_))
+        {
+            return false;
+        }
+        return holder_->type_index() == std::type_index(typeid(T));
     }
 
     /// cast 转换，类型不一致时会抛出异常
@@ -589,10 +597,20 @@ public:
     {
         if (!castable<T>())
         {
-            throw flag_cast_exception(
-                std::string("can not cast ") + typeid(T).name()
-                + " to " + type_index_.name()
-            );
+            if (!bool(holder_))
+            {
+                throw flag_cast_exception(
+                    std::string("can not cast null")
+                    + " to " + typeid(T).name()
+                );
+            }
+            else
+            {
+                throw flag_cast_exception(
+                    std::string("can not cast ") + holder_->type_index().name()
+                    + " to " + typeid(T).name()
+                );
+            }
         }
         auto ptr = dynamic_cast<value_holder<T>*>(holder_.get());
         return ptr->value_;
@@ -619,6 +637,10 @@ public:
     /// parse 解析
     error_t parse(const std::string& text)
     {
+        if (!bool(holder_))
+        {
+            return make_error("flag is null", stack_);
+        }
         if (oneof_.size() != 0)
         {
             auto it = oneof_.begin();
@@ -637,7 +659,7 @@ public:
         text_ = text;
         if (!holder_->parse(text))
         {
-            return make_error(std::string("parse failed. type must be ") + type_index_.name(), stack_);
+            return make_error(std::string("parse failed. type must be ") + holder_->type_index().name(), stack_);
         }
         return ok;
     }
@@ -652,6 +674,18 @@ public:
     bool extend()
     {
         return extend_;
+    }
+
+    /// exist 是否存在
+    void exist(bool exist)
+    {
+        exist_ = exist;
+    }
+
+    /// exist 是否存在
+    bool exist()
+    {
+        return exist_;
     }
 
     /// name 名称
@@ -725,11 +759,11 @@ public:
         class = typename std::enable_if<!std::is_pointer<T>::value
         && !std::is_const<T>::value 
         && !std::is_reference<T>::value
-        && !std::is_same<std::decay<T>::type, bool>::value
-        && !std::is_same<std::decay<T>::type, std::string>::value
-        && !std::is_same<std::decay<T>::type, unsigned char>::value
-        && !std::is_same<std::decay<T>::type, char>::value
-        && !std::is_same<std::decay<T>::type, signed char>::value, T>::type>
+        && !std::is_same<T, bool>::value
+        && !std::is_same<T, std::string>::value
+        && !std::is_same<T, unsigned char>::value
+        && !std::is_same<T, char>::value
+        && !std::is_same<T, signed char>::value, T>::type>
     error_t set(const std::string& name, const std::string& fast, T default_v, 
         const std::string& desc, bool extend = false)
     {
@@ -836,13 +870,13 @@ public:
         class = typename std::enable_if<!std::is_pointer<T>::value
         && !std::is_const<T>::value
         && !std::is_reference<T>::value
-        && !std::is_same<std::decay<T>::type, double>::value
-        && !std::is_same<std::decay<T>::type, float>::value
-        && !std::is_same<std::decay<T>::type, bool>::value
-        && !std::is_same<std::decay<T>::type, std::string>::value
-        && !std::is_same<std::decay<T>::type, unsigned char>::value
-        && !std::is_same<std::decay<T>::type, char>::value
-        && !std::is_same<std::decay<T>::type, signed char>::value, T>::type>
+        && !std::is_same<T, double>::value
+        && !std::is_same<T, float>::value
+        && !std::is_same<T, bool>::value
+        && !std::is_same<T, std::string>::value
+        && !std::is_same<T, unsigned char>::value
+        && !std::is_same<T, char>::value
+        && !std::is_same<T, signed char>::value, T>::type>
     error_t set(const std::string& name, const std::string& fast, T default_v,
         const std::vector<T>& options, const std::string& desc, bool extend = false)
     {
@@ -964,11 +998,11 @@ public:
         class = typename std::enable_if<!std::is_pointer<T>::value
         && !std::is_const<T>::value
         && !std::is_reference<T>::value
-        && !std::is_same<std::decay<T>::type, bool>::value
-        && !std::is_same<std::decay<T>::type, std::string>::value
-        && !std::is_same<std::decay<T>::type, unsigned char>::value
-        && !std::is_same<std::decay<T>::type, char>::value
-        && !std::is_same<std::decay<T>::type, signed char>::value, T>::type>
+        && !std::is_same<T, bool>::value
+        && !std::is_same<T, std::string>::value
+        && !std::is_same<T, unsigned char>::value
+        && !std::is_same<T, char>::value
+        && !std::is_same<T, signed char>::value, T>::type>
     error_t set(T* ptr, const std::string& name, const std::string& fast, T default_v,
         const std::string& desc, bool extend = false)
     {
@@ -1075,13 +1109,13 @@ public:
         class = typename std::enable_if<!std::is_pointer<T>::value
         && !std::is_const<T>::value
         && !std::is_reference<T>::value
-        && !std::is_same<std::decay<T>::type, double>::value
-        && !std::is_same<std::decay<T>::type, float>::value
-        && !std::is_same<std::decay<T>::type, bool>::value
-        && !std::is_same<std::decay<T>::type, std::string>::value
-        && !std::is_same<std::decay<T>::type, unsigned char>::value
-        && !std::is_same<std::decay<T>::type, char>::value
-        && !std::is_same<std::decay<T>::type, signed char>::value, T>::type>
+        && !std::is_same<T, double>::value
+        && !std::is_same<T, float>::value
+        && !std::is_same<T, bool>::value
+        && !std::is_same<T, std::string>::value
+        && !std::is_same<T, unsigned char>::value
+        && !std::is_same<T, char>::value
+        && !std::is_same<T, signed char>::value, T>::type>
     error_t set(T* ptr, const std::string& name, const std::string& fast, T default_v,
         const std::vector<T>& options, const std::string& desc, bool extend = false)
     {
@@ -1152,6 +1186,7 @@ public:
         return ok;
     }
 
+    /// set 设置
     template <class T,
         class = unsigned char>
     error_t set(unsigned char* ptr, const std::string& name, const std::string& fast, unsigned char default_v,
@@ -1200,20 +1235,18 @@ public:
 private:
     // ctor [禁用] 隐式构造
     template<class T, 
-        class = typename std::enable_if<!std::is_same<std::decay<T>::type, flag_t>::value, T>::type>
+        class = typename std::enable_if<std::is_same<T, flag_t>::value, T>::type>
     flag_t(T&& v)
-        : holder_(new value_holder<std::decay<T>::type>(std::forward<T>(v)))
-        , type_index_(typeid(std::decay<T>::type))
+        : holder_(new value_holder<T>(std::forward<T>(v)))
     {
     }
 
     // = [禁用] 隐式赋值
     template<class T,
-        class = typename std::enable_if<!std::is_same<std::decay<T>::type, flag_t>::value, T>::type>
+        class = typename std::enable_if<std::is_same<T, flag_t>::value, T>::type>
     flag_t& operator=(T& rhs)
     {
-        holder_.reset(new value_holder<std::decay<T>::type>(std::forward<T>(rhs)));
-        type_index_ = typeid(std::decay<T>::type);
+        holder_.reset(new value_holder<T>(std::forward<T>(rhs)));
         return *this;
     }
 
@@ -1254,8 +1287,7 @@ private:
         desc_ = desc;
         extend_ = extend;
 
-        holder_.reset(new value_holder<std::decay<T>::type>(std::forward<T>(default_v)));
-        type_index_ = typeid(std::decay<T>::type);
+        holder_.reset(new value_holder<T>(std::forward<T>(default_v)));
 
         return ok;
     }
@@ -1280,8 +1312,7 @@ private:
         desc_ = desc;
         extend_ = extend;
 
-        holder_.reset(new value_holder<std::decay<T>::type>(ptr, std::forward<T>(default_v)));
-        type_index_ = typeid(std::decay<T>::type);
+        holder_.reset(new value_holder<T>(ptr, std::forward<T>(default_v)));
 
         return ok;
     }
@@ -1362,11 +1393,11 @@ private:
 
         virtual const std::type_index type_index()
         {
-            return std::type_index(typeid(value_));
+            return std::move(std::type_index(typeid(value_)));
         }
 
         T* ptr_{ nullptr };
-        T value_;
+        T value_{ 0 }; // note: 一些类型在特殊的编译器版本上会有性能问题，应该避免大内存和复杂类型做为flag。
     };
 
     holder_ptr clone() const
@@ -1381,71 +1412,59 @@ private:
     // 数据
     holder_ptr      holder_;
 
-    // 数据类型
-    std::type_index type_index_;
-
-    /// extend_ 是否可继承
+    // extend_ 是否可继承
     bool extend_{ false };
+
+    // exist_ 是否存在
+    bool exist_{ false };
 
     // required_ 是否必须
     // todo: no implements
     bool required_{ false };
 
-    /// name_ 名称
+    // name_ 名称
     std::string name_;
 
-    /// fast_ 快捷名称
+    // fast_ 快捷名称
     std::string fast_;
 
-    /// desc_ 描述
+    // desc_ 描述
     std::string desc_;
 
     // stack_ 堆栈
     std::string stack_;
 
-    /// default_ 默认值对应的字符串表示
+    // default_ 默认值对应的字符串表示
     std::string default_;
 
-    /// text_ 输入的字符串
+    // text_ 输入的字符串
     std::string text_;
 
-    /// oneof 可选项，枚举值
+    // oneof 可选项，枚举值
     std::vector<std::string> oneof_;
 };
 
 // ----------------------------------------------------------------------------
-// cmd
+// cmd_t
 
-// cmd 命令
-class cmd
+// cmd_t 命令
+class cmd_t
 {
 public:
-    cmd()
+    cmd_t()
     {
     }
 
-    ~cmd()
+    ~cmd_t()
     {
     }
 
-    explicit cmd(const char* name)
+    explicit cmd_t(const std::string& name)
         : name_(name)
     {
     }
 
-    explicit cmd(const std::string& name)
-        : name_(name)
-    {
-    }
-
-    cmd(const std::string& name, const std::string& brief, const std::string& desc)
-        : name_(name)
-        , brief_(brief)
-        , desc_(desc)
-    {
-    }
-
-    cmd(const cmd& cpy)
+    cmd_t(const cmd_t& cpy)
         : name_(cpy.name_)
         , brief_(cpy.brief_)
         , desc_(cpy.desc_)
@@ -1458,7 +1477,7 @@ public:
     {
     }
 
-    cmd(cmd&& mv)
+    cmd_t(cmd_t&& mv) noexcept
         : name_(std::move(mv.name_))
         , brief_(std::move(mv.brief_))
         , desc_(std::move(mv.desc_))
@@ -1471,7 +1490,7 @@ public:
     {
     }
 
-    cmd& operator=(const cmd& rhs)
+    cmd_t& operator=(const cmd_t& rhs)
     {
         name_ = rhs.name_;
         brief_ = rhs.brief_;
@@ -1482,6 +1501,20 @@ public:
         flags_ = rhs.flags_;
         on_func_ = rhs.on_func_;
         parent_ptr_ = rhs.parent_ptr_;
+        return *this;
+    }
+
+    cmd_t& operator=(cmd_t&& mv) noexcept
+    {
+        name_ = std::move(mv.name_);
+        brief_ = std::move(mv.brief_);
+        desc_ = std::move(mv.desc_);
+        example_ = std::move(mv.example_);
+        stack_ = std::move(mv.stack_);
+        subs_ = std::move(mv.subs_);
+        flags_ = std::move(mv.flags_);
+        on_func_ = std::move(mv.on_func_);
+        parent_ptr_ = mv.parent_ptr_;
         return *this;
     }
 
@@ -1570,15 +1603,15 @@ public:
 
     // bind 绑定子命令
     // todo: 标准的命令名称的检查
-    error_t bind(cmd* cmd_ptr)
+    error_t bind(cmd_t* cmd_ptr)
     {
         if (nullptr == cmd_ptr)
         {
-            return make_error("error: cmd ptr is null");
+            return make_error("error: cmd_t ptr is null");
         }
         if (cmd_ptr->name().empty())
         {
-            return make_error("error: cmd name is null");
+            return make_error("error: cmd_t name is null");
         }
         auto it = subs_.find(cmd_ptr->name());
         if (it != subs_.end())
@@ -1595,11 +1628,11 @@ public:
     {
         if (nullptr == cmd_ptr)
         {
-            return make_error("error: cmd ptr is null");
+            return make_error("error: cmd_t ptr is null");
         }
         if (cmd_ptr->name().empty())
         {
-            return make_error("error: cmd name is null");
+            return make_error("error: cmd_t name is null");
         }
         auto it = subs_.find(cmd_ptr->name());
         if (it != subs_.end())
@@ -1610,29 +1643,13 @@ public:
         return ok;
     }
 
-    // parent 上级命令
-    // 上级命令并不是在绑定命令时确定的，而是在解析时确定的。
-    // 因为pcmd_t可以复用，存在于多条命令分支中。
-    void parent(pcmd_t& cmd_ptr)
-    {
-        parent_ptr_ = cmd_ptr;
-    }
-
-    // parent 上级命令
-    // 上级命令并不是在绑定命令时确定的，而是在解析时确定的。
-    // 因为pcmd_t可以复用，存在于多条命令分支中。
-    pcmd_t& parent()
-    {
-        return parent_ptr_;
-    }
-
     // flag 标记
     template <class T,
         class = typename std::enable_if<!std::is_pointer<T>::value
         && !std::is_const<T>::value
         && !std::is_reference<T>::value, T>::type>
-    error_t flag(const std::string& name, const std::string& fast, T default_value,
-        const std::string& desc, bool extend = false)
+        error_t flag(const std::string& name, const std::string& fast, T default_value,
+            const std::string& desc, bool extend = false)
     {
         auto it = flags_.find("--" + name);
         if (it != flags_.end())
@@ -1664,11 +1681,11 @@ public:
         class = typename std::enable_if<!std::is_pointer<T>::value
         && !std::is_const<T>::value
         && !std::is_reference<T>::value
-        && !std::is_same<std::decay<T>::type, double>::value
-        && !std::is_same<std::decay<T>::type, float>::value
-        && !std::is_same<std::decay<T>::type, bool>::value, T>::type>
-    error_t flag(const std::string& name, const std::string& fast, T default_value,
-        const std::vector<T>& options, const std::string& desc, bool extend = false)
+        && !std::is_same<T, double>::value
+        && !std::is_same<T, float>::value
+        && !std::is_same<T, bool>::value, T>::type>
+        error_t flag(const std::string& name, const std::string& fast, T default_value,
+            const std::vector<T>& options, const std::string& desc, bool extend = false)
     {
         auto it = flags_.find("--" + name);
         if (it != flags_.end())
@@ -1700,8 +1717,8 @@ public:
         class = typename std::enable_if<!std::is_pointer<T>::value
         && !std::is_const<T>::value
         && !std::is_reference<T>::value, T>::type>
-    error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
-        const std::string& desc, bool extend = false)
+        error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
+            const std::string& desc, bool extend = false)
     {
         auto it = flags_.find("--" + name);
         if (it != flags_.end())
@@ -1733,11 +1750,11 @@ public:
         class = typename std::enable_if<!std::is_pointer<T>::value
         && !std::is_const<T>::value
         && !std::is_reference<T>::value
-        && !std::is_same<std::decay<T>::type, double>::value
-        && !std::is_same<std::decay<T>::type, float>::value
-        && !std::is_same<std::decay<T>::type, bool>::value, T>::type>
-    error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
-        const std::vector<T>& options, const std::string& desc, bool extend = false)
+        && !std::is_same<T, double>::value
+        && !std::is_same<T, float>::value
+        && !std::is_same<T, bool>::value, T>::type>
+        error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
+            const std::vector<T>& options, const std::string& desc, bool extend = false)
     {
         auto it = flags_.find("--" + name);
         if (it != flags_.end())
@@ -1764,25 +1781,65 @@ public:
         return ok;
     }
 
-    // on_exec 执行命令
-    error_t on_exec(const pcmd_t& cmd, const args_t& args, const flags_t& flags)
+    // cast 转换，不存在或类型不一致时会抛出异常
+    template<class T>
+    bool castable(const std::string& name)
     {
-        auto fit = flags.find("--help");
-        if (fit != flags.end() && fit->second->cast<bool>())
+        auto it = flags_.find(name);
+        if (it == flags_.end())
         {
-            return on_help(flags);
+            throw flag_cast_exception("not found.");
+        }
+        return flags_[name]->castable<T>();
+    }
+
+    // cast 转换，不存在或类型不一致时会抛出异常
+    template<class T>
+    T& cast(const std::string& name)
+    {
+        auto it = flags_.find(name);
+        if (it == flags_.end())
+        {
+            throw flag_cast_exception("not found.");
+        }
+        return flags_[name]->cast<T>();
+    }
+
+    // parent 上级命令
+    // 上级命令并不是在绑定命令时确定的，而是在解析时确定的。
+    // 因为pcmd_t可以复用，存在于多条命令分支中。
+    void parent(pcmd_t& cmd_ptr)
+    {
+        parent_ptr_ = cmd_ptr;
+    }
+
+    // parent 上级命令
+    // 上级命令并不是在绑定命令时确定的，而是在解析时确定的。
+    // 因为pcmd_t可以复用，存在于多条命令分支中。
+    pcmd_t& parent()
+    {
+        return parent_ptr_;
+    }
+
+    // on_exec 执行命令
+    error_t on_exec(const pcmd_t& pcmd, const args_t& args)
+    {
+        auto fit = flags_.find("--help");
+        if (fit != flags_.end() && fit->second->cast<bool>())
+        {
+            return on_help();
         }
         if (nullptr == on_func_)
         {
             return make_error(" warn: nothing to do");
         }
-        return on_func_(cmd, args, flags);
+        return on_func_(pcmd, args);
     }
 
 private:
 
     // on_help 输出帮助信息
-    error_t on_help(const flags_t& flags)
+    error_t on_help()
     {
         if (!name_.empty())
         {
@@ -1821,7 +1878,7 @@ private:
         }
 
         flags_t flags_tmp;
-        for (auto& item : flags)
+        for (auto& item : flags_)
         {
             flags_tmp["--" + item.second->name()] = item.second;
         }
@@ -1877,7 +1934,7 @@ private:
             if (oneof.size() != 0)
             {
                 std::cout << "  {";
-                for (auto& eit = oneof.begin(); eit != oneof.end(); ++eit)
+                for (auto eit = oneof.begin(); eit != oneof.end(); ++eit)
                 {
                     if (eit != oneof.begin())
                     {
@@ -1898,7 +1955,7 @@ private:
                 << "  " << example_ << std::endl << std::endl;
         }
 
-        std::cout << "for more information about a cmd:" << std::endl
+        std::cout << "for more information about a command:" << std::endl
             << "  " << clips::name() << " [cmds...] -h" << std::endl
             << "  " << clips::name() << " [cmds...] --help" << std::endl;
 
@@ -1934,21 +1991,15 @@ private:
 };
 
 /// make_cmd 创建指令
-static pcmd_t make_cmd()
+inline pcmd_t make_cmd()
 {
-    return std::move(std::make_shared<cmd>());
+    return std::move(std::make_shared<cmd_t>());
 }
 
 /// make_cmd 创建指令
-static pcmd_t make_cmd(const std::string& name)
+inline pcmd_t make_cmd(const std::string& name)
 {
-    return std::move(std::make_shared<cmd>(name));
-}
-
-/// make_cmd 创建指令
-static pcmd_t make_cmd(const std::string& name, const std::string& brief, const std::string& desc)
-{
-    return std::move(std::make_shared<cmd>(name, brief, desc));
+    return std::move(std::make_shared<cmd_t>(name));
 }
 
 // ----------------------------------------------------------------------------
@@ -1965,14 +2016,14 @@ public:
         static std::once_flag flagone;
         std::call_once(flagone, []() {
             ins_.reset(new inner());
-            });
+        });
         return *ins_;
     }
 
-    // name 应用名称
-    void name(const char* name)
+    // path 模块路径
+    const std::string& path() const
     {
-        name_ = utils::filename(name);
+        return path_;
     }
 
     // name 应用名称
@@ -1988,12 +2039,6 @@ public:
     }
 
     // desc 应用描述
-    void desc(const char* desc)
-    {
-        desc_ = desc;
-    }
-
-    // desc 应用描述
     void desc(const std::string& desc)
     {
         desc_ = desc;
@@ -2003,12 +2048,6 @@ public:
     const std::string& desc() const
     {
         return desc_;
-    }
-
-    // version 版本号
-    void version(const char* version)
-    {
-        version_ = version;
     }
 
     // version 版本号
@@ -2024,28 +2063,15 @@ public:
     }
 
     // argv 返回所有原始参数
-    const argv_t& argv()
+    const argv_t& argv(void)
     {
         return argv_;
     }
 
-    // str 原始命令行
-    std::string str()
-    {
-        return str_;
-    }
-
-    // bind 根函数
+    // bind 绑定根函数
     error_t bind(func_t func)
     {
-        root_->bind(func);
-        return ok;
-    }
-
-    // bind 绑定子命令
-    error_t bind(cmd* ptr)
-    {
-        return root_->bind(ptr);
+        return root_->bind(func);
     }
 
     // bind 绑定子指令
@@ -2054,119 +2080,66 @@ public:
         return root_->bind(ptr);
     }
 
+    // flag 标记
+    template <class T,
+        class = typename std::enable_if<!std::is_pointer<T>::value
+        && !std::is_const<T>::value
+        && !std::is_reference<T>::value, T>::type>
+        error_t flag(const std::string& name, const std::string& fast, T default_value,
+            const std::string& desc, bool extend = false)
+    {
+        return root_->flag(name, fast, default_value, desc, extend);
+    }
+
+    // flag 标记
+    template <class T,
+        class = typename std::enable_if<!std::is_pointer<T>::value
+        && !std::is_const<T>::value
+        && !std::is_reference<T>::value
+        && !std::is_same<T, double>::value
+        && !std::is_same<T, float>::value
+        && !std::is_same<T, bool>::value, T>::type>
+        error_t flag(const std::string& name, const std::string& fast, T default_value,
+            const std::vector<T>& options, const std::string& desc, bool extend = false)
+    {
+        return root_->flag(name, fast, default_value, options, desc, extend);
+    }
+
+    // pflag 标记
+    template <class T,
+        class = typename std::enable_if<!std::is_pointer<T>::value
+        && !std::is_const<T>::value
+        && !std::is_reference<T>::value, T>::type>
+        error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
+            const std::string& desc, bool extend = false)
+    {
+        return root_->pflag(ptr, name, fast, default_value, desc, extend);
+    }
+
+    // pflag 标记
+    template <class T,
+        class = typename std::enable_if<!std::is_pointer<T>::value
+        && !std::is_const<T>::value
+        && !std::is_reference<T>::value
+        && !std::is_same<T, double>::value
+        && !std::is_same<T, float>::value
+        && !std::is_same<T, bool>::value, T>::type>
+        error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
+            const std::vector<T>& options, const std::string& desc, bool extend = false)
+    {
+        return root_->pflag(ptr, name, fast, default_value, options, desc, extend);
+    }
+
     // _bind_init_func 绑定初始化函数
     bool _bind_init_func(_init_func_t func, const char* file, int line)
     {
-        inits_.push_back(std::make_tuple(func, file, line));
+        _inits_.push_back(std::make_tuple(func, file, line));
         return false; // 返回值只是为了初始化一个全局静态变量，没有其他作用
-    }
-
-    // flag 标记
-    template <class T,
-        class = typename std::enable_if<!std::is_pointer<T>::value
-        && !std::is_const<T>::value
-        && !std::is_reference<T>::value, T>::type>
-    error_t flag(const std::string& name, const std::string& fast, T& default_value, 
-        const std::string& desc, bool extend = false)
-    {
-        return root_->flag<T>(name, fast, default_value, desc, extend);
-    }
-
-    // flag 标记
-    template <class T,
-        class = typename std::enable_if<!std::is_pointer<T>::value
-        && !std::is_const<T>::value
-        && !std::is_reference<T>::value
-        && !std::is_same<std::decay<T>::type, double>::value
-        && !std::is_same<std::decay<T>::type, float>::value
-        && !std::is_same<std::decay<T>::type, bool>::value, T>::type>
-    error_t flag(const std::string& name, const std::string& fast, T& default_value, 
-        const std::vector<T>& options, const std::string& desc, bool extend = false)
-    {
-        return root_->flag<T>(name, fast, default_value, options, desc, extend);
-    }
-
-    // pflag 标记
-    template <class T,
-        class = typename std::enable_if<!std::is_pointer<T>::value && !std::is_const<T>::value
-        && !std::is_reference<T>::value, T>::type>
-    error_t pflag(T* ptr, const std::string& name, const std::string& fast, T& default_value,
-        const std::string& desc, bool extend = false)
-    {
-        return root_->pflag<T>(ptr, name, fast, default_value, desc, extend);
-    }
-
-    // pflag 标记
-    template <class T,
-        class = typename std::enable_if<!std::is_pointer<T>::value
-        && !std::is_const<T>::value
-        && !std::is_reference<T>::value
-        && !std::is_same<std::decay<T>::type, double>::value
-        && !std::is_same<std::decay<T>::type, float>::value
-        && !std::is_same<std::decay<T>::type, bool>::value, T>::type>
-    error_t pflag(T * ptr, const std::string& name, const std::string& fast, T& default_value,
-        const std::vector<T>& options, const std::string& desc, bool extend = false)
-    {
-        return root_->pflag<T>(ptr, name, fast, default_value, options, desc, extend);
-    }
-
-    // cast 转换，不存在或类型不一致时会抛出异常
-    template<class T>
-    T& cast(const std::string& name)
-    {
-        auto it = flags_.find(name);
-        if (it == flags_.end())
-        {
-            throw flag_cast_exception("not found.");
-        }
-        return flags_[name]->cast<T>();
-    }
-
-    // cast 转换
-    template<class T>
-    T& cast(const std::string& name, error_t *eptr)
-    {
-        auto it = flags_.find(name);
-        if (it == flags_.end())
-        {
-            *eptr = make_error("not found.");
-            if (std::is_class<T>::value)
-            {
-                return std::move(T());
-            }
-            else
-            {
-                T o;
-                memset(&o, 0, sizeof(T));
-                return o;
-            }
-        }
-        
-        try
-        {
-            return flags_[name]->cast<T>();
-        }
-        catch (std::exception & e)
-        {
-            *eptr = make_error(e.what());
-            if (std::is_class<T>::value)
-            {
-                return std::move(T());
-            }
-            else
-            {
-                T o;
-                memset(&o, 0, sizeof(T));
-                return o;
-            }
-        }
     }
 
     // exec 执行命令
     error_t exec(const std::string& argv)
     {
-        str_ = argv;
-
         utils::split(argv_, argv, " ");
 
         auto ret = bind_init();
@@ -2175,13 +2148,13 @@ public:
             return ret;
         }
 
-        return parse(argv_, args_, flags_);
+        return parse(argv_);
     }
 
     // exec 执行命令
     error_t exec(int argc, char* argv[])
     {
-        module_ = argv[0];
+        path_ = argv[0];
 
         if (name_.empty())
         {
@@ -2189,18 +2162,10 @@ public:
         }
 
         argv_.clear();
-
-        std::stringstream oss;
         for (int i = 1; i < argc; i++)
         {
             argv_.push_back(argv[i]);
-            if (i >= 1)
-            {
-                oss << " ";
-            }
-            oss << argv[i];
         }
-        str_ = oss.str();
 
         auto ret = bind_init();
         if (ret != ok)
@@ -2208,14 +2173,14 @@ public:
             return ret;
         }
 
-        return parse(argv_, args_, flags_);
+        return parse(argv_);
     }
 
 private:
     inner(const inner& cpy) = delete;
     inner& operator=(const inner& rhs) = delete;
     inner()
-        : root_(new cmd())
+        : root_(new cmd_t())
     {
         root_->flag<bool>("help", "h", false, "help", true);
     }
@@ -2223,7 +2188,7 @@ private:
     // bind_init 初始化
     error_t bind_init()
     {
-        for (auto& item : inits_)
+        for (auto& item : _inits_)
         {
             auto ret = std::get<0>(item)();
             if (ret != ok)
@@ -2236,18 +2201,17 @@ private:
     }
 
     // parse 解析
-    error_t parse(const argv_t& argv, args_t& args, flags_t& flags)
+    error_t parse(const argv_t& argv)
     {
         std::stringstream full_stack;
-        std::stringstream cmd_stack;
+        std::stringstream pcmd_stack;
         full_stack << name_;
-        cmd_stack << name_;
+        pcmd_stack << name_;
 
-        args.clear();
-        flags.clear();
+        auto& pcmd = root_;
+        pcmd->stack(pcmd_stack.str());
 
-        auto cmd = root_;
-        cmd->stack(cmd_stack.str());
+        args_t args;
         size_t i = 0;
         while (i < argv.size())
         {
@@ -2256,44 +2220,41 @@ private:
             // 命令和参数处理
             if (!utils::starts_with(argv[i].c_str(), "-"))
             {
-                if (args.size() == 0)
+                if (args.size() != 0)
                 {
-                    cmd_stack << " " << argv[i];
-
-                    auto cit = cmd->subs().find(argv[i]);
-                    if (cit != cmd->subs().end())
-                    {
-                        for (auto& item : cmd->flags())
-                        {
-                            if (item.second->extend() && flags.count(item.first) == 0)
-                            {
-                                item.second->stack(cmd_stack.str());
-                                flags[item.first] = item.second;
-                            }
-                        }
-                        cit->second->parent(cmd);
-                        cmd = cit->second;
-                        cmd->stack(cmd_stack.str());
-                    }
-                    else
-                    {
-                        if (cmd->subs().size() != 0)
-                        {
-                            return make_error("undefined cmd. ", cmd_stack.str());
-                        }
-                        args.push_back(utils::trim(argv[i], "\'"));
-                    }
+                    // 后面的都是参数了，不是子命令
+                    args.push_back(utils::trim(argv[i], "\'"));
+                    i++;
+                    continue;
                 }
-                else
+
+                auto cit = pcmd->subs().find(argv[i]);
+                if (cit == pcmd->subs().end())
                 {
                     args.push_back(utils::trim(argv[i], "\'"));
+                    i++;
+                    continue;
                 }
+
+                for (auto& item : pcmd->flags())
+                {
+                    if (item.second->extend() && cit->second->flags().count(item.first) == 0)
+                    {
+                        item.second->stack(pcmd_stack.str());
+                        cit->second->flags()[item.first] = item.second;
+                    }
+                }
+
+                cit->second->parent(pcmd);
+                pcmd = cit->second;
+                pcmd_stack << " " << argv[i];
+                pcmd->stack(pcmd_stack.str());
+
                 i++;
                 continue;
             }
 
-            // flag选项
-
+            // flagt提取
             auto flag_name = argv[i];
             std::string flag_value("");
 
@@ -2305,27 +2266,15 @@ private:
             }
             i++;
 
-            auto fit = cmd->flags().find(flag_name);
-            if (fit == cmd->flags().end())
+            auto fit = pcmd->flags().find(flag_name);
+            if (fit == pcmd->flags().end())
             {
-                auto pit = flags.find(flag_name);
-                if (pit == flags.end())
-                {
-                    return make_error("undefined flag.", full_stack.str());
-                }
-                else if (!pit->second->extend())
-                {
-                    return make_error("not a extend flag.", full_stack.str());
-                }
-                else
-                {
-                    fit = pit;
-                }
+                return make_error("undefined flag.", full_stack.str());
             }
 
             // flag转换
-
             auto pflag = fit->second;
+            pflag->exist(true);
             if (pflag->castable<bool>())
             {
                 if (flag_equal_pos == std::string::npos)
@@ -2333,13 +2282,13 @@ private:
                     if (i < argv.size())
                     {
                         flag_value = utils::trim(argv[i], "\'");
-                        if (_stricmp(flag_value.c_str(), "true") == 0 || _stricmp(flag_value.c_str(), "1") == 0)
+                        if (flag_value.compare("True") == 0 || flag_value.compare("true") == 0 || flag_value.compare("1") == 0)
                         {
                             pflag->parse("1");
                             full_stack << " " << argv[i];
                             i++;
                         }
-                        else if (_stricmp(flag_value.c_str(), "false") == 0 || _stricmp(flag_value.c_str(), "0") == 0)
+                        else if (flag_value.compare("False") == 0 || flag_value.compare("false") == 0 || flag_value.compare("0") == 0)
                         {
                             pflag->parse("0");
                             full_stack << " " << argv[i];
@@ -2357,11 +2306,11 @@ private:
                 }
                 else
                 {
-                    if (_stricmp(flag_value.c_str(), "true") == 0 || _stricmp(flag_value.c_str(), "1") == 0)
+                    if (flag_value.compare("True") == 0 || flag_value.compare("true") == 0 || flag_value.compare("1") == 0)
                     {
                         pflag->parse("1");
                     }
-                    else if (_stricmp(flag_value.c_str(), "false") == 0 || _stricmp(flag_value.c_str(), "0") == 0)
+                    else if (flag_value.compare("False") == 0 || flag_value.compare("false") == 0 || flag_value.compare("0") == 0)
                     {
                         pflag->parse("0");
                     }
@@ -2406,20 +2355,24 @@ private:
             }
         }
 
-        for (auto& item : cmd->flags())
+        error_t err;
+        try
         {
-            if (flags.count(item.first) == 0)
-            {
-                item.second->stack(cmd->stack());
-                flags[item.first] = item.second;
-            }
+            err = pcmd->on_exec(pcmd, args);
         }
-
-        return cmd->on_exec(cmd, args, flags);
+        catch (flag_cast_exception& e)
+        {
+            return make_error(e.what());
+        }
+        catch (std::exception& e)
+        {
+            return make_error(e.what());
+        }
+        return err;
     }
 
-    // module_ 模块名称
-    std::string module_;
+    // path_ 模块路径argv[0]
+    std::string path_;
 
     // name_ 应用名称
     std::string name_;
@@ -2430,32 +2383,30 @@ private:
     // version_ 版本
     std::string version_;
 
-    // str_ 原始命令
-    std::string str_;
-
     // argv_ 原始命令
     argv_t argv_;
-
-    // args_ 命令参数
-    args_t args_;
-
-    // flags_ 选项列表
-    flags_t flags_;
 
     // root_ 根命令
     pcmd_t root_;
 
-    // inits_ 初始化函数
-    std::vector<std::tuple<_init_func_t, std::string, int>> inits_;
+    // _inits_ 初始化函数
+    _inits_t _inits_;
 };
 
 // ----------------------------------------------------------------------------
 // global
 
+/// path 应用路径
+/// 实际为argv[0]；
+inline const std::string& path()
+{
+    return inner::get().path();
+}
+
 /// name 应用名称
 /// 如果指定了应用名称，则在exec解析时不会被重写；
 /// 如果不指定应用名称，则在exec解析时会使用argv[0]代替；
-static void name(const std::string& name)
+inline void name(const std::string& name)
 {
     inner::get().name();
 }
@@ -2463,49 +2414,37 @@ static void name(const std::string& name)
 /// name 应用名称
 /// 如果指定了应用名称，则在exec解析时不会被重写；
 /// 如果不指定应用名称，则在exec解析时会使用argv[0]代替；
-static const std::string& name()
+inline const std::string& name()
 {
     return inner::get().name();
 }
 
 /// desc 应用描述
-static void desc(const std::string& desc)
+inline void desc(const std::string& desc)
 {
     inner::get().desc(desc);
 }
 
 /// desc 应用描述
-static const std::string& desc()
+inline const std::string& desc()
 {
     return inner::get().desc();
 }
 
 /// argv 返回所有原始参数
-static const argv_t& argv()
+inline const argv_t& argv()
 {
     return inner::get().argv();
 }
 
-// str 原始命令行
-static std::string str()
-{
-    return inner::get().str();
-}
-
 /// bind 绑定根函数
-static error_t bind(func_t func)
+inline error_t bind(func_t func)
 {
     return inner::get().bind(func);
 }
 
-/// bind 绑定指令
-static error_t bind(cmd* ptr)
-{
-    return inner::get().bind(ptr);
-}
-
-/// bind 绑定指令
-static error_t bind(pcmd_t& ptr)
+/// bind 绑定子命令
+inline error_t bind(pcmd_t& ptr)
 {
     return inner::get().bind(ptr);
 }
@@ -2515,24 +2454,24 @@ template <class T,
     class = typename std::enable_if<!std::is_pointer<T>::value
     && !std::is_const<T>::value
     && !std::is_reference<T>::value, T>::type>
-static error_t flag(const std::string& name, const std::string& fast,
-    T default_value, const std::string& desc, bool extend = false)
+    inline error_t flag(const std::string& name, const std::string& fast, T default_value,
+        const std::string& desc, bool extend = false)
 {
-    return inner::get().flag<T>(name, fast, default_value, desc, extend);
+    return inner::get().flag(name, fast, default_value, desc, extend);
 }
 
-/// flag 标记
+/// flag
 template <class T,
     class = typename std::enable_if<!std::is_pointer<T>::value
     && !std::is_const<T>::value
     && !std::is_reference<T>::value
-    && !std::is_same<std::decay<T>::type, double>::value
-    && !std::is_same<std::decay<T>::type, float>::value
-    && !std::is_same<std::decay<T>::type, bool>::value, T>::type>
-static error_t flag(const std::string& name, const std::string& fast, T default_value,
-    const std::vector<T>& options, const std::string& desc, bool extend = false)
+    && !std::is_same<T, double>::value
+    && !std::is_same<T, float>::value
+    && !std::is_same<T, bool>::value, T>::type>
+    inline error_t flag(const std::string& name, const std::string& fast, T default_value,
+        const std::vector<T>& options, const std::string& desc, bool extend = false)
 {
-    return inner::get().flag<T>(name, fast, default_value, options, desc, extend);
+    return inner::get().flag(name, fast, default_value, options, desc, extend);
 }
 
 /// pflag 标记
@@ -2540,55 +2479,40 @@ template <class T,
     class = typename std::enable_if<!std::is_pointer<T>::value
     && !std::is_const<T>::value
     && !std::is_reference<T>::value, T>::type>
-static error_t pflag(T* ptr, const std::string& name, const std::string& fast,
-    T default_value, const std::string& desc, bool extend = false)
+    inline error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
+        const std::string& desc, bool extend = false)
 {
-    return inner::get().pflag<T>(ptr, name, fast, default_value, desc, extend);
+    return inner::get().pflag(ptr, name, fast, default_value, desc, extend);
 }
 
-/// pflag 标记
+/// pflag
 template <class T,
     class = typename std::enable_if<!std::is_pointer<T>::value
     && !std::is_const<T>::value
     && !std::is_reference<T>::value
-    && !std::is_same<std::decay<T>::type, double>::value
-    && !std::is_same<std::decay<T>::type, float>::value
-    && !std::is_same<std::decay<T>::type, bool>::value, T>::type>
-static error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
-    const std::vector<T>& options, const std::string& desc, bool extend = false)
+    && !std::is_same<T, double>::value
+    && !std::is_same<T, float>::value
+    && !std::is_same<T, bool>::value, T>::type>
+    inline error_t pflag(T* ptr, const std::string& name, const std::string& fast, T default_value,
+        const std::vector<T>& options, const std::string& desc, bool extend = false)
 {
-    return inner::get().pflag<T>(ptr, name, fast, default_value, options, desc, extend);
-}
-
-// cast 转换，不存在或类型不一致时会抛出异常
-template<class T>
-static T& cast(const std::string& name)
-{
-    return inner::get().cast<T>(name);
-}
-
-// cast 转换
-template<class T>
-static T& cast(const std::string& name, error_t* eptr)
-{
-    return inner::get().cast<T>(name, eptr);
+    return inner::get().pflag(ptr, name, fast, default_value, options, desc, extend);
 }
 
 /// exec 执行命令
-static error_t exec(const std::string& argv)
+inline error_t exec(const std::string& argv)
 {
     return inner::get().exec(argv);
 }
 
 /// exec 执行命令
-static error_t exec(int argc, char* argv[])
+inline error_t exec(int argc, char* argv[])
 {
     return inner::get().exec(argc, argv);
 }
 
-// _bind_init_func 绑定初始化函数
-// 内部使用
-static bool _bind_init_func(_init_func_t func, const char* file, int line)
+// _bind_init_func 绑定初始化函数, 内部使用
+inline bool _bind_init_func(_init_func_t func, const char* file, int line)
 {
     return inner::get()._bind_init_func(func, file, line);
 }
